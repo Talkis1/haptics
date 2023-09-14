@@ -14,7 +14,7 @@
 // Pin Declarations
 const int PWMoutp = 4;
 const int PWMoutn = 5;
-const int PWMspeed = 9;
+const int PWMspeed = 11;
 
 const int encoder0PinA = 2;
 const int encoder0PinB = 3;
@@ -51,10 +51,15 @@ double force = 0;           // force at the handle
 double Tp = 0;              // torque of the motor pulley
 double duty = 0;            // duty cylce (between 0 and 255)
 unsigned int output = 0;    // output command to the motor
+double maxTorque = .0017;
+
 
 // Timing Variables: Initalize Timer and Set Haptic Loop
 boolean hapticLoopFlagOut = false; 
 boolean timeoutOccured = false; 
+
+// Variable to take in user input
+char input;
 
 //--------------------------------------------------------------------------
 // Initialize
@@ -102,6 +107,12 @@ void loop()
 // --------------------------
   void hapticLoop()
   {
+      while(Serial.available()){
+        if(input == 'E'){
+          analogWrite(PWMspeed, abs(0)); //abs(force)
+          exit(0);
+        }
+      }
 
       // See if flag is out (couldn't finish before another call) 
       if(hapticLoopFlagOut)
@@ -121,11 +132,10 @@ void loop()
         //*************************************************************
       
           
-
           // SOLUTION:
           double theta_pul = ((2*3.14)/48)*pos;
           double xh = 5.96*theta_pul;
-          Serial.println(xh);
+          //Serial.println(xh);
           // Define kinematic parameters you may need
            
           // Step 2.1: print updatedPos via serial monitor
@@ -160,16 +170,21 @@ void loop()
         //*************************************************************
  
             // Init force 
-            int force = 0;
+            int force = 1;
             double K = 15;   // spring stiffness 
+
+            // Equation that computes the motor pulley torque (Tp)
+            
     
-           if(pos < 0)
-          {
-            force = -K*pos; 
-          } else 
-          {
-            force = 0; 
-          }
+          //  if(pos < 0)
+          // {
+          //   force = -K*pos; 
+
+
+          // } else 
+          // {
+          //   force = 0; 
+          // }
 
          // This is just a simple example of a haptic wall that only uses encoder position.
          // You will need to add the rest of the following cases. You will want to enable some way to select each case. 
@@ -206,11 +221,23 @@ void loop()
  
 
       //*************************************************************
-      //*** Section 5. Force output (do not change) *****************
+      //*** Section 4. Force output (do not change) *****************
       //*************************************************************
 
         // Determine correct direction 
         //*************************************************************
+        Tp = 100*force *((rh*rp)/rs);
+        if (Tp>100*maxTorque){
+          Tp = 100*maxTorque;
+        }
+
+        //int pwmTp = analogRead(0);
+        int pwmTp = 255*Tp/(100*maxTorque);
+        //pwmTp = map(Tp,0,maxTorque,0,255);
+        
+        Serial.println(pwmTp);
+        //force = pwmFromTp;
+  
         if(force < 0)
         {
         digitalWrite(PWMoutp, HIGH);
@@ -227,11 +254,12 @@ void loop()
         {
           force = 255; 
         }
-            //Serial.println(force); // Could print this to troublshoot but don't leave it due to bogging down speed
+             // Could print this to troublshoot but don't leave it due to bogging down speed
 
         // Write out the motor speed.
         //*************************************************************    
-        analogWrite(PWMspeed, abs(force)); //abs(force)
+        analogWrite(PWMspeed, abs(0)); //abs(force)
+
       //  analogWrite(PWMspeed, 255); //abs(force)
   
   // Update variables 
