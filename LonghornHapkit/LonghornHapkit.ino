@@ -48,7 +48,7 @@ double rs = 0.074;  //[m]
 
 // Force output variables
 double force = 0;           // force at the handle
-double Tp = 0;              // torque of the motor pulley
+int16_t Tp = 0;              // torque of the motor pulley
 double duty = 0;            // duty cylce (between 0 and 255)
 unsigned int output = 0;    // output command to the motor
 double maxTorque = .0017;
@@ -170,7 +170,7 @@ void loop()
         //*************************************************************
  
             // Init force 
-            int force = 1;
+            double force = .3;
             double K = 15;   // spring stiffness 
 
             // Equation that computes the motor pulley torque (Tp)
@@ -226,13 +226,13 @@ void loop()
 
         // Determine correct direction 
         //*************************************************************
-        Tp = 100*force *((rh*rp)/rs);
-        if (Tp>100*maxTorque){
-          Tp = 100*maxTorque;
+        Tp = force *((rh*rp)/rs);
+        if (Tp>maxTorque){
+          Tp = maxTorque;
         }
 
         //int pwmTp = analogRead(0);
-        int pwmTp = 255*Tp/(100*maxTorque);
+        int pwmTp = 255*Tp/maxTorque;
         //pwmTp = map(Tp,0,maxTorque,0,255);
         
         Serial.println(pwmTp);
@@ -258,7 +258,7 @@ void loop()
 
         // Write out the motor speed.
         //*************************************************************    
-        analogWrite(PWMspeed, abs(0)); //abs(force)
+        analogWrite(PWMspeed, abs(pwmTp)); //abs(force)
 
       //  analogWrite(PWMspeed, 255); //abs(force)
   
