@@ -10,6 +10,9 @@
 #include <TimerOne.h>  // This library manages the timing of the haptic loop 
 #include <Encoder.h>   // This library manages the encoder read.
 
+double stall_Torque = 0.0167; //Nm, found from motor datasheet.
+char input;
+
 
 // Pin Declarations
 const int PWMoutp = 4;
@@ -48,18 +51,14 @@ double rs = 0.074;  //[m]
 
 // Force output variables
 double force = 0;           // force at the handle
-int16_t Tp = 0;              // torque of the motor pulley
+double Tp = 0;              // torque of the motor pulley
 double duty = 0;            // duty cylce (between 0 and 255)
 unsigned int output = 0;    // output command to the motor
-double maxTorque = .0017;
 
 
 // Timing Variables: Initalize Timer and Set Haptic Loop
 boolean hapticLoopFlagOut = false; 
 boolean timeoutOccured = false; 
-
-// Variable to take in user input
-char input;
 
 //--------------------------------------------------------------------------
 // Initialize
@@ -77,6 +76,7 @@ void setup()
  // Haptic Loop Timer Initalization
    Timer1.initialize(); 
   long period = 1000; // [us]  10000 [us] - 100 Hz 
+  long frequency = 1/period;
   Timer1.attachInterrupt(hapticLoop,period); 
 
   // Init Position and Velocity
@@ -107,12 +107,6 @@ void loop()
 // --------------------------
   void hapticLoop()
   {
-      while(Serial.available()){
-        if(input == 'E'){
-          analogWrite(PWMspeed, abs(0)); //abs(force)
-          exit(0);
-        }
-      }
 
       // See if flag is out (couldn't finish before another call) 
       if(hapticLoopFlagOut)
@@ -124,18 +118,20 @@ void loop()
       //*************************************************************
       pos = encoder.read();
       double vel = (.80)*lastVel + (.20)*(pos - lastPos)/(.01);
-//      Serial.print("Velocity: ");
-      //Serial.print(pos);
+      // Serial.println(pos);
+
 
         //*************************************************************
         //*** Section 2. Compute handle position in meters ************
         //*************************************************************
       
-          
-          // SOLUTION:
+          // ADD YOUR CODE HERE
           double theta_pul = ((2*3.14)/48)*pos;
           double xh = 5.96*theta_pul;
-          //Serial.println(xh);
+          xh = xh/10; // convert xh to meters from cm
+          // Serial.println(xh);
+
+          // SOLUTION:
           // Define kinematic parameters you may need
            
           // Step 2.1: print updatedPos via serial monitor
@@ -146,7 +142,7 @@ void loop()
           // Step 2.2: Compute the angle of the sector pulley (ts) in degrees based on updatedPos
          //*************************************************************
 
-          //  double ts = -.0107*updatedPos + 4.9513; // NOTE - THESE NUMBERS MIGHT NOT BE CORRECT! USE KINEMATICS TO FIGRUE IT OUT!
+          //  double ts = ; // NOTE: You can get this from the encoder. 
        
          // Step 2.3: Compute the position of the handle based on ts
           //*************************************************************
@@ -170,34 +166,31 @@ void loop()
         //*************************************************************
  
             // Init force 
-            double force = .3;
-            double K = 15;   // spring stiffness 
+            force = 2.75;
 
-            // Equation that computes the motor pulley torque (Tp)
-            
-    
-          //  if(pos < 0)
-          // {
-          //   force = -K*pos; 
-
-
-          // } else 
-          // {
-          //   force = 0; 
-          // }
 
          // This is just a simple example of a haptic wall that only uses encoder position.
          // You will need to add the rest of the following cases. You will want to enable some way to select each case. 
          // Options for this are #DEFINE statements, swtich case statements (i.e., like a key press in serial monitor), or 
          // some other method. 
+         double K = 30;   // spring stiffness 
+         if(pos < 0)
+         {
+          //  force = -K*pos; 
+          force = -K*xh; 
+         } else 
+         {
+           force = 0; 
+         }
           
           // Virtual Wall 
         //*************************************************************
-           
+        
        
          // Linear Damping 
         //*************************************************************
-        
+        // double B = 1; // damping constant
+        // double damping = velocity * B;
 
          // Nonlinear Friction
         //*************************************************************
@@ -226,18 +219,6 @@ void loop()
 
         // Determine correct direction 
         //*************************************************************
-        Tp = force *((rh*rp)/rs);
-        if (Tp>maxTorque){
-          Tp = maxTorque;
-        }
-
-        //int pwmTp = analogRead(0);
-        int pwmTp = 255*Tp/maxTorque;
-        //pwmTp = map(Tp,0,maxTorque,0,255);
-        
-        Serial.println(pwmTp);
-        //force = pwmFromTp;
-  
         if(force < 0)
         {
         digitalWrite(PWMoutp, HIGH);
@@ -248,22 +229,36 @@ void loop()
         digitalWrite(PWMoutn, HIGH);
         } 
     
-        // Limit torque to motor and write
+        // Convert force to torque, limit torque to motor, and write out
         //*************************************************************
-        if(abs(force) > 255)
-        {
-          force = 255; 
-        }
-             // Could print this to troublshoot but don't leave it due to bogging down speed
+         Tp = force *((rh*rp)/rs); // ans: force*(rh*rp)/rs; //torque = ? See slides for relationship
+        double force_max=stall_Torque/((rh*rp)/rs);
+        // Serial.println(force_max);
+         // Add some code here to limit Tp based on the stall torque. 
+         if(abs(Tp) > stall_Torque)
+         {
+          Tp = stall_Torque;
+         }
 
         // Write out the motor speed.
         //*************************************************************    
-        analogWrite(PWMspeed, abs(pwmTp)); //abs(force)
+        analogWrite(PWMspeed, (abs(Tp)/stall_Torque)*255); // This ensures we aren't writing more than the motor can provide
 
-      //  analogWrite(PWMspeed, 255); //abs(force)
+        Serial.println((abs(Tp)/stall_Torque)*255);
   
   // Update variables 
   lastVel = vel;
   lastPos = pos; 
+
+    while(Serial.available()){
+      input = Serial.read();
+        if(input == 'E'){
+          Serial.println("Program Terminated.");
+          digitalWrite(PWMoutp, LOW);
+          digitalWrite(PWMoutn, LOW);
+          analogWrite(PWMspeed, abs(0));
+          exit(0);
+        }
+      }
 
 }
