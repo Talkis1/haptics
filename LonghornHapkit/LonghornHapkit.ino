@@ -14,8 +14,12 @@
 #include <Encoder.h>   // This library manages the encoder read.
 // #define Spring(k, x) (-k*x)
 // #define Damping(v,b) (b*v)
+double pi = 3.14159;
 double stall_Torque = 0.0167; //Nm, found from motor datasheet.
 char input;
+double timeStart = 0;
+double timeEnd = 0;
+double Fsin = 0;
 
 
 // Pin Declarations
@@ -34,9 +38,10 @@ double lastPos = 0;
 double lastVel = 0; 
 
 // Kinematics variables
+
 double xh = 0;           // position of the handle [m]
 double theta_s = 0;      // Angle of the sector pulley in deg
-double xh_prev;          // Distance of the handle at previous time step
+double xh_;          // Distance of the handle at previous time step
 double xh_prev2;
 double dxh;              // Velocity of the handle
 double dxh_prev;
@@ -44,7 +49,10 @@ double dxh_prev2;
 double dxh_filt;         // Filtered velocity of the handle
 double dxh_filt_prev;
 double dxh_filt_prev2;
-
+double vh = 0.0;
+double lastXh = 0.0;
+double lastLastVh = 0.0;
+double lastVh = 0.0;
 // *******************************************
 // UNCOMMENT THESE AND INCLUDE CORRECT NUMBERS
 // *******************************************
@@ -58,13 +66,13 @@ double force = 0;           // force at the handle
 double Tp = 0;              // torque of the motor pulley
 double duty = 0;            // duty cylce (between 0 and 255)
 unsigned int output = 0;    // output command to the motor
-
+double time = 0;
 
 // Timing Variables: Initalize Timer and Set Haptic Loop
 boolean hapticLoopFlagOut = false; 
 boolean timeoutOccured = false; 
-#define spring(k_val, x_val) (k_val*x_val)
-#define damp(b_val, v_val) (b_val*v_val)
+// #define spring(k_val, x_val) (k_val*x_val)
+// #define damp(b_val, v_val) (b_val*v_val)
 //--------------------------------------------------------------------------
 // Initialize
 //--------------------------------------------------------------------------
@@ -98,6 +106,83 @@ void setup()
 //--------------------------------------------------------------------------
 // Main Loop
 //--------------------------------------------------------------------------
+double spring(double xh,double x_wall,double k){
+  double force = 0.0;
+  double hapticWall = 0;
+  if (xh<x_wall){
+    hapticWall = k*xh;
+  }
+  else{
+    hapticWall = 0;
+  }
+  return hapticWall;
+}
+
+double _damping(double B, double vh){
+  double damping = vh * B;
+  return damping;
+}
+
+double friction(double B, double vh, double Cn, double lastLastVh){
+  double changeVh = vh-lastLastVh;
+  double damping = _damping(B,vh);
+  if (vh < -changeVh){
+    // Serial.println("first if");
+  force = Cn*constrain(vh,-1,1)+damping;
+  }else if (-changeVh < vh && vh < 0){
+    // Serial.println("second if");
+    force = -3;
+  }else if (0 < vh && vh < changeVh){
+    // Serial.println("third if");
+    force = 3;
+  }else if (vh > changeVh){
+    // Serial.println("fourth if");
+    force = Cn*constrain(vh,-1,1)+damping;
+  }
+  return force;
+}
+
+double hardWall(double x_wall, double maxTime, double xh, double k,
+                double amplitude){
+  double hapticWall = .5;
+  if (xh<=x_wall && xh_ <=x_wall){
+    timeStart = millis();
+  }else if (xh>x_wall){
+    timeEnd = millis();
+  }
+  double elapsedTime = (timeStart-timeEnd)/1000;
+  if (elapsedTime<0){
+    elapsedTime = 0;
+  }else if (elapsedTime>maxTime){
+    elapsedTime=maxTime;
+  }
+  // Serial.println(x_wall);
+  xh_ = xh;
+  double freq = (1/(2*pi))*sqrt(k/.5);
+  Fsin = amplitude*abs(vh)*exp(log(.01)*elapsedTime/maxTime)*sin(2*pi*elapsedTime*freq);
+
+  if (xh<x_wall){
+    hapticWall = k*xh+Fsin;
+  }
+  else{
+    hapticWall = 0;
+  }
+  return hapticWall;
+}
+
+double bump_valley(double xh, double k){
+  double x0 = 0;
+  double force = 0;
+  double maxXh = .065/2;
+
+
+  if (xh>x0){
+    force = k*(xh-maxXh);
+  }else if(xh<x0){
+    force = k*(xh-maxXh);
+  }
+  return force;
+}
 
 void loop(){
   if(timeoutOccured){
@@ -120,7 +205,7 @@ void hapticLoop(){
   //*************************************************************
   pos = encoder.read();
   double vel = (.80)*lastVel + (.20)*(pos - lastPos)/(.01);
-
+  
 
   //*************************************************************
   //*** Section 2. Compute handle position in meters ************
@@ -129,8 +214,13 @@ void hapticLoop(){
   // ADD YOUR CODE HERE
   double theta_pul = ((2*3.14)/48)*pos;
   double xh = ((rh*rp)/rs)*theta_pul;  // 5.96*theta_pul;
-    
-  // xh = xh; // convert xh to meters from cm
+  dxh = (xh - lastXh) / 0.001;
+  double dxh_filt = .9*dxh + 0.1*dxh_prev;
+
+  dxh_prev = dxh;
+
+  // dxh_filt_prev2 = dxh_filt_prev;
+  // dxh_filt_prev = dxh_filt;
 
   // SOLUTION:
   // Define kinematic parameters you may need
@@ -157,41 +247,14 @@ void hapticLoop(){
       
   // Step 2.5: compute handle velocity
   //*************************************************************
-  //  vh = -(.95*.95)*lastLastVh + 2*.95*lastVh + (1-.95)*(1-.95)*(xh-lastXh)/.0001;  // filtered velocity (2nd-order filter)
-  //  lastXh = xh;
-  //  lastLastVh = lastVh;
-  // lastVh = vh;
+  vh = -(.95*.95)*lastLastVh + 2*.95*lastVh + (1-.95)*(1-.95)*(xh-lastXh)/.0001;  // filtered velocity (2nd-order filter)
+  lastXh = xh;
+  lastLastVh = lastVh;
+  lastVh = vh;
 
   //*************************************************************
   //*** Section 3. Assign a motor output force in Newtons *******  
   //*************************************************************
-
-  // Init force 
-    
-  // int var = 1;
-  // double x_wall = -.005;
-  // int b = 30;
-  // int k = 300;
-  // int force = 0;
-  // Serial.println(k);
-  // Serial.println(Spring(k,xh));
-  // if (xh < x_wall){
-  //       double force = Spring(k, xh);}
-  // else{
-  //   double force = 0;}
-  // switch (var){
-  //   case 1:
-  //     if (xh < x_wall){
-  //       double force = Spring(k, xh);}
-  //     else{
-  //       double force = 0;
-  //     }
-  //     break;
-  //   case 2:
-  //     double force = Damping(vel, b);
-  //     break;
-  // }
-
 
   // This is just a simple example of a haptic wall that only uses encoder position.
   // You will need to add the rest of the following cases. You will want to enable some way to select each case. 
@@ -200,21 +263,27 @@ void hapticLoop(){
   
   // Virtual Wall 
   //*************************************************************
-  
+
   
   // Linear Damping 
   //*************************************************************
-  // double B = 1; // damping constant
-  // double damping = velocity * B;
+  double B = .3; // damping constant
+  double damping = _damping(B,vh);
 
   // Nonlinear Friction
   //*************************************************************
+  double Cn=.01;
   
 
   // A Hard Surface 
+  // create decaying sinusoid upon impact with a virtual wall
+  // select values for the amplitude-scaling factor, amplitude depends on impact
+  // with velocity, 
   //*************************************************************
-  
-
+  double x_wall = 0;
+  double maxTime = 20;
+  int k = 200;
+  double amplitude = .5;
   // Bump and Valley  
   //*************************************************************
 
@@ -234,38 +303,25 @@ void hapticLoop(){
 
   // Determine correct direction 
   //*************************************************************
-  // double force = spring(xh, int 300, double -.005);
-  double force = .5;
-  double b = .01;
-  int k = 100;
-  double x_wall = -.005;
-  double hapticWall = .5;
-  if (xh<x_wall){
-    hapticWall = spring(k,xh);
-  }
-  else{
-    hapticWall = 0;
-  }
-  double damping = damp(b,vel);
 
-  bool forceType = false;
 
-  if (forceType){
-    force = hapticWall;
-  }
-  else{
-    force = damping;
-  }
-
-  if (abs(force)>0){
+  // force = spring(xh, 0, k);
+  // force = _damping(B, vh);
+  // force = friction(B, vh, Cn, lastLastVh);
+  // force = hardWall(x_wall, maxTime, xh, k, amplitude);
+  force = bump_valley(xh, 30);
+    
+  Serial.println(xh);
+  if (force>0){
     digitalWrite(PWMoutp, HIGH);
     digitalWrite(PWMoutn, LOW);
   }
   else {
     digitalWrite(PWMoutp, LOW);
     digitalWrite(PWMoutn, HIGH);
+
   } 
-    
+  // force = 2.75;
   // Convert force to torque, limit torque to motor, and write out
   //*************************************************************
   Tp = force *((rh*rp)/rs); // ans: force*(rh*rp)/rs; //torque = ? See slides for relationship
@@ -278,10 +334,11 @@ void hapticLoop(){
   // Write out the motor speed.
   //*************************************************************    
   analogWrite(PWMspeed, (abs(Tp)/stall_Torque)*255); // This ensures we aren't writing more than the motor can provide
-
-  Serial.println((abs(Tp)/stall_Torque)*255);
+  // Serial.println(vel);
+  // Serial.println((abs(Tp)/stall_Torque)*255);
         // Serial.println(force);
-  
+  // float changeVh = vh-lastLastVh;
+  // Serial.println(vh);
   // Update variables 
   lastVel = vel;
   lastPos = pos; 
