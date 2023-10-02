@@ -12,6 +12,14 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <TimerOne.h>  // This library manages the timing of the haptic loop 
 #include <Encoder.h>   // This library manages the encoder read.
+#define EFFECT_NONE 0
+#define EFFECT_HAPTIC_WALL 1
+#define EFFECT_DAMPING 2
+#define EFFECT_NONLINEAR_FRICTION 3
+#define EFFECT_HARD_SURFACE 4
+#define EFFECT_BUMP_VALLEY 5
+#define EFFECT_TEXTURE 6
+int ACTIVE_EFFECT = EFFECT_NONE;
 // #define Spring(k, x) (-k*x)
 // #define Damping(v,b) (b*v)
 double pi = 3.14159;
@@ -43,12 +51,6 @@ double xh = 0;           // position of the handle [m]
 double theta_s = 0;      // Angle of the sector pulley in deg
 double xh_;          // Distance of the handle at previous time step
 double xh_prev2;
-double dxh;              // Velocity of the handle
-double dxh_prev;
-double dxh_prev2;
-double dxh_filt;         // Filtered velocity of the handle
-double dxh_filt_prev;
-double dxh_filt_prev2;
 double vh = 0.0;
 double lastXh = 0.0;
 double lastLastVh = 0.0;
@@ -104,8 +106,9 @@ void setup()
 }
 
 //--------------------------------------------------------------------------
-// Main Loop
+// Functions
 //--------------------------------------------------------------------------
+
 double spring(double xh,double x_wall,double k){
   double force = 0.0;
   double hapticWall = 0;
@@ -175,18 +178,39 @@ double bump_valley(double xh, double k){
   double force = 0;
   double maxXh = .065/2;
 
+  force = k*(abs(xh)-maxXh);
+  return force;
+}
 
-  if (xh>x0){
-    force = k*(xh-maxXh);
-  }else if(xh<x0){
-    force = k*(xh-maxXh);
+double texture(double xh, double velo, double b){
+  double force = 0;
+  if (xh>0 && xh<.01 || xh>.02 && xh<.03 || xh>.04 && xh<.05){
+    force = b*velo;
   }
   return force;
 }
 
+//--------------------------------------------------------------------------
+// Main Loop
+//--------------------------------------------------------------------------
+
 void loop(){
   if(timeoutOccured){
     Serial.println("timeout occured");
+  }
+  if (Serial.available() > 0) {
+    int userInput = Serial.parseInt(); // Read an integer from the serial monitor
+    if (userInput >= EFFECT_NONE && userInput <= EFFECT_TEXTURE) {
+      ACTIVE_EFFECT = userInput; // Update the active effect based on user input
+      Serial.print("Active Effect is now: ");
+      Serial.println(ACTIVE_EFFECT);
+    } else {
+      Serial.println("Invalid input. Please enter integer 0-6");
+    }
+    // Clear the serial buffer
+    while (Serial.available() > 0) {
+      Serial.read();
+    }
   }
 }
 
@@ -206,24 +230,17 @@ void hapticLoop(){
   pos = encoder.read();
   double vel = (.80)*lastVel + (.20)*(pos - lastPos)/(.01);
   
-
   //*************************************************************
   //*** Section 2. Compute handle position in meters ************
   //*************************************************************
 
   // ADD YOUR CODE HERE
-  double theta_pul = ((2*3.14)/48)*pos;
-  double xh = ((rh*rp)/rs)*theta_pul;  // 5.96*theta_pul;
-  dxh = (xh - lastXh) / 0.001;
-  double dxh_filt = .9*dxh + 0.1*dxh_prev;
-
-  dxh_prev = dxh;
-
-  // dxh_filt_prev2 = dxh_filt_prev;
-  // dxh_filt_prev = dxh_filt;
+  double theta_pul = ((2*3.14)/48)*pos; // pulley position
+  double xh = ((rh*rp)/rs)*theta_pul;  // 5.96*theta_pul; // handle position
 
   // SOLUTION:
   // Define kinematic parameters you may need
+  // parameters were defined above
     
   // Step 2.1: print updatedPos via serial monitor
   //*************************************************************
@@ -264,29 +281,17 @@ void hapticLoop(){
   // Virtual Wall 
   //*************************************************************
 
-  
   // Linear Damping 
   //*************************************************************
-  double B = .3; // damping constant
-  double damping = _damping(B,vh);
 
   // Nonlinear Friction
   //*************************************************************
-  double Cn=.01;
   
-
   // A Hard Surface 
-  // create decaying sinusoid upon impact with a virtual wall
-  // select values for the amplitude-scaling factor, amplitude depends on impact
-  // with velocity, 
   //*************************************************************
-  double x_wall = 0;
-  double maxTime = 20;
-  int k = 200;
-  double amplitude = .5;
+
   // Bump and Valley  
   //*************************************************************
-
 
   // Texture 
   //*************************************************************
@@ -295,8 +300,6 @@ void hapticLoop(){
   // compute interaction forces relative to the changing ball position.  
   //*************************************************************
     
-
-
   //*************************************************************
   //*** Section 4. Force output (do not change) *****************
   //*************************************************************
@@ -305,11 +308,44 @@ void hapticLoop(){
   //*************************************************************
 
 
+  double B = .3; // damping constant
+  double Cn=.01;
+  double x_wall = 0;
+  double maxTime = 20;
+  int k = 200;
+  double amplitude = .5;
   // force = spring(xh, 0, k);
   // force = _damping(B, vh);
   // force = friction(B, vh, Cn, lastLastVh);
   // force = hardWall(x_wall, maxTime, xh, k, amplitude);
-  force = bump_valley(xh, 30);
+  // force = bump_valley(xh, 30);
+  // force = texture(xh, vh, B);
+    switch (ACTIVE_EFFECT) {
+    case EFFECT_NONE:
+      force = 0;
+      break;
+    case EFFECT_HAPTIC_WALL:
+      force = spring(xh, 0, k);
+      break;
+    case EFFECT_DAMPING:
+      force = _damping(B, vh);
+      break;
+    case EFFECT_NONLINEAR_FRICTION:
+      force = friction(B, vh, Cn, lastLastVh);
+      break;
+    case EFFECT_HARD_SURFACE:
+      force = hardWall(x_wall, maxTime, xh, k, amplitude);
+      break;
+    case EFFECT_BUMP_VALLEY:
+      force = bump_valley(xh, 30);
+      break;
+    case EFFECT_TEXTURE:
+      force = texture(xh, vh, B);
+      break;
+    default:
+      force = 0;
+      break;
+  }
     
   Serial.println(xh);
   if (force>0){
