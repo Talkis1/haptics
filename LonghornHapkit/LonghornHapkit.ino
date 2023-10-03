@@ -110,8 +110,7 @@ void setup()
 //--------------------------------------------------------------------------
 
 double spring(double xh,double x_wall,double k){
-  double force = 0.0;
-  double hapticWall = 0;
+  double hapticWall = 0.0;
   if (xh<x_wall){
     hapticWall = k*xh;
   }
@@ -147,7 +146,8 @@ double friction(double B, double vh, double Cn, double lastLastVh){
 
 double hardWall(double x_wall, double maxTime, double xh, double k,
                 double amplitude){
-  double hapticWall = .5;
+  double hapticWall = 0.0;
+  k = k+50;
   if (xh<=x_wall && xh_ <=x_wall){
     timeStart = millis();
   }else if (xh>x_wall){
@@ -161,11 +161,11 @@ double hardWall(double x_wall, double maxTime, double xh, double k,
   }
   // Serial.println(x_wall);
   xh_ = xh;
-  double freq = (1/(2*pi))*sqrt(k/.5);
+  double freq = (1/(2*pi))*sqrt(k/.1);
   Fsin = amplitude*abs(vh)*exp(log(.01)*elapsedTime/maxTime)*sin(2*pi*elapsedTime*freq);
 
   if (xh<x_wall){
-    hapticWall = k*xh+Fsin;
+    hapticWall = k*xh+abs(Fsin);
   }
   else{
     hapticWall = 0;
@@ -236,7 +236,7 @@ void hapticLoop(){
 
   // ADD YOUR CODE HERE
   double theta_pul = ((2*3.14)/48)*pos; // pulley position
-  double xh = ((rh*rp)/rs)*theta_pul;  // 5.96*theta_pul; // handle position
+  double xh = ((rh*rp)/rs)*theta_pul;  // 5.96*theta_pul; // handle position // in terms of meters
 
   // SOLUTION:
   // Define kinematic parameters you may need
@@ -295,37 +295,18 @@ void hapticLoop(){
 
   // Texture 
   //*************************************************************
-
-  // CHALLENGE POINTS: Try simulating a paddle ball! Hint you need to keep track of the virtual balls dynamics and 
-  // compute interaction forces relative to the changing ball position.  
-  //*************************************************************
-    
-  //*************************************************************
-  //*** Section 4. Force output (do not change) *****************
-  //*************************************************************
-
-  // Determine correct direction 
-  //*************************************************************
-
-
-  double B = .3; // damping constant
+  double B = .5; // damping constant
   double Cn=.01;
-  double x_wall = 0;
-  double maxTime = 20;
+  double x_wall = -0.005; // 5mm we calculated position in terms of meters
+  double maxTime = 5;
   int k = 200;
   double amplitude = .5;
-  // force = spring(xh, 0, k);
-  // force = _damping(B, vh);
-  // force = friction(B, vh, Cn, lastLastVh);
-  // force = hardWall(x_wall, maxTime, xh, k, amplitude);
-  // force = bump_valley(xh, 30);
-  // force = texture(xh, vh, B);
     switch (ACTIVE_EFFECT) {
     case EFFECT_NONE:
       force = 0;
       break;
     case EFFECT_HAPTIC_WALL:
-      force = spring(xh, 0, k);
+      force = spring(xh, x_wall, k);
       break;
     case EFFECT_DAMPING:
       force = _damping(B, vh);
@@ -337,7 +318,7 @@ void hapticLoop(){
       force = hardWall(x_wall, maxTime, xh, k, amplitude);
       break;
     case EFFECT_BUMP_VALLEY:
-      force = bump_valley(xh, 30);
+      force = bump_valley(xh, 50);
       break;
     case EFFECT_TEXTURE:
       force = texture(xh, vh, B);
@@ -347,7 +328,17 @@ void hapticLoop(){
       break;
   }
     
-  Serial.println(xh);
+  // CHALLENGE POINTS: Try simulating a paddle ball! Hint you need to keep track of the virtual balls dynamics and 
+  // compute interaction forces relative to the changing ball position.  
+  //*************************************************************
+    
+  //*************************************************************
+  //*** Section 4. Force output (do not change) *****************
+  //*************************************************************
+
+  // Determine correct direction 
+  //*************************************************************
+
   if (force>0){
     digitalWrite(PWMoutp, HIGH);
     digitalWrite(PWMoutn, LOW);
@@ -357,7 +348,6 @@ void hapticLoop(){
     digitalWrite(PWMoutn, HIGH);
 
   } 
-  // force = 2.75;
   // Convert force to torque, limit torque to motor, and write out
   //*************************************************************
   Tp = force *((rh*rp)/rs); // ans: force*(rh*rp)/rs; //torque = ? See slides for relationship
@@ -370,11 +360,7 @@ void hapticLoop(){
   // Write out the motor speed.
   //*************************************************************    
   analogWrite(PWMspeed, (abs(Tp)/stall_Torque)*255); // This ensures we aren't writing more than the motor can provide
-  // Serial.println(vel);
-  // Serial.println((abs(Tp)/stall_Torque)*255);
-        // Serial.println(force);
-  // float changeVh = vh-lastLastVh;
-  // Serial.println(vh);
+
   // Update variables 
   lastVel = vel;
   lastPos = pos; 
