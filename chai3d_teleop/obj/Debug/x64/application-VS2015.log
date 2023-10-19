@@ -1,0 +1,2 @@
+﻿  application.cpp
+C:\Users\Public\Documents\chai3d-3.2.0-multiplatform\chai3d-3.2.0\templates\G6A4\GLUT_Group6\application.cpp(8,10): fatal error C1083: Cannot open include file: 'chai3d.h': No such file or directory
